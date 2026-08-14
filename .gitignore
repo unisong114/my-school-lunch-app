@@ -63,6 +63,11 @@ __pypackages__/
 .pdm.toml
 poetry.toml
 
+# Playwright (E2E)
+playwright-report/
+test-results/
+.playwright/
+
 # Editors
 .vscode/*
 !.vscode/settings.json
