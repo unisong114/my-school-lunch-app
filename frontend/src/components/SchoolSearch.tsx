@@ -9,7 +9,6 @@ import {
   MessageBar,
   MessageBarBody,
   Spinner,
-  Text,
   makeStyles,
   mergeClasses,
   tokens,
@@ -30,6 +29,16 @@ const useStyles = makeStyles({
     flexDirection: "column",
     gap: "8px",
     marginTop: "12px",
+    maxHeight: "360px",
+    overflowY: "auto",
+  },
+  selectedSummary: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "12px",
+    marginTop: "12px",
+    padding: "12px",
   },
   schoolCard: {
     cursor: "pointer",
@@ -59,6 +68,9 @@ export function SchoolSearch({ selectedSchool, onSelect }: SchoolSearchProps) {
   const requestIdRef = useRef(0);
   // 대기 중인 자동완성 debounce 타이머 (명시적 제출 시 취소하기 위해 보관).
   const debounceTimerRef = useRef<number | null>(null);
+  // 학교 선택 직후 query를 학교 이름으로 세팅할 때, 자동완성 검색이 다시
+  // 트리거되지 않도록 다음 effect 실행을 한 번 건너뛰기 위한 플래그.
+  const justSelectedRef = useRef(false);
 
   function clearPendingAutoSearch() {
     if (debounceTimerRef.current !== null) {
@@ -93,6 +105,11 @@ export function SchoolSearch({ selectedSchool, onSelect }: SchoolSearchProps) {
   // 입력 중 일부 키워드만으로도 자동완성처럼 검색 결과를 표시합니다 (debounce 적용).
   useEffect(() => {
     clearPendingAutoSearch();
+    if (justSelectedRef.current) {
+      // 학교 선택 직후 query가 채워진 것이므로 재검색하지 않습니다.
+      justSelectedRef.current = false;
+      return;
+    }
     const name = query.trim();
     if (name.length < MIN_QUERY_LENGTH) {
       requestIdRef.current += 1; // 진행 중이던 요청 결과를 무효화
@@ -108,6 +125,23 @@ export function SchoolSearch({ selectedSchool, onSelect }: SchoolSearchProps) {
     return clearPendingAutoSearch;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query]);
+
+  function handleSelect(school: School) {
+    clearPendingAutoSearch();
+    justSelectedRef.current = true;
+    setQuery(school.schoolName);
+    setSchools([]);
+    setSearched(false);
+    setError(null);
+    onSelect(school);
+  }
+
+  function handleChangeSchool() {
+    justSelectedRef.current = true;
+    setQuery("");
+    setSchools([]);
+    setSearched(false);
+  }
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -148,7 +182,29 @@ export function SchoolSearch({ selectedSchool, onSelect }: SchoolSearchProps) {
         </MessageBar>
       )}
 
-      {!error && searched && !loading && schools.length === 0 && (
+      {!error && selectedSchool && schools.length === 0 && (
+        <Card className={styles.selectedSummary}>
+          <div>
+            <Body1>
+              <strong>{selectedSchool.schoolName}</strong>
+            </Body1>
+            <Caption1 className={styles.meta}>
+              {[
+                selectedSchool.region,
+                selectedSchool.schoolKind,
+                selectedSchool.address,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </Caption1>
+          </div>
+          <Button appearance="secondary" onClick={handleChangeSchool}>
+            변경
+          </Button>
+        </Card>
+      )}
+
+      {!error && !selectedSchool && searched && !loading && schools.length === 0 && (
         <MessageBar intent="warning" style={{ marginTop: 12 }}>
           <MessageBarBody>
             검색 결과가 없습니다. 다른 학교 이름으로 검색해 보세요.
@@ -173,14 +229,14 @@ export function SchoolSearch({ selectedSchool, onSelect }: SchoolSearchProps) {
                     styles.schoolCard,
                     isSelected && styles.selected,
                   )}
-                  onClick={() => onSelect(school)}
+                  onClick={() => handleSelect(school)}
                   aria-pressed={isSelected}
                   role="button"
                   tabIndex={0}
                   onKeyDown={(event) => {
                     if (event.key === "Enter" || event.key === " ") {
                       event.preventDefault();
-                      onSelect(school);
+                      handleSelect(school);
                     }
                   }}
                 >
@@ -192,11 +248,6 @@ export function SchoolSearch({ selectedSchool, onSelect }: SchoolSearchProps) {
                       .filter(Boolean)
                       .join(" · ")}
                   </Caption1>
-                  {isSelected && (
-                    <Text size={200} weight="semibold">
-                      선택됨
-                    </Text>
-                  )}
                 </Card>
               </li>
             );
