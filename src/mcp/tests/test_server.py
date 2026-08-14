@@ -119,6 +119,29 @@ async def test_get_meals_ok_lunch_only(monkeypatch: pytest.MonkeyPatch) -> None:
     assert fake.calls["meals"]["meal_code"] == "2"
 
 
+async def test_get_meals_includes_meal_count(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = FakeNeisClient(
+        meals=[
+            {
+                "MLSV_YMD": "20260101",
+                "MMEAL_SC_NM": "중식",
+                "DDISH_NM": "백미밥",
+                "MLSV_FGR": "512",
+            }
+        ]
+    )
+    _set_fake(monkeypatch, fake)
+
+    result = await get_meals(
+        edu_office_code="B10",
+        school_code="7010569",
+        from_date="2026-01-01",
+        to_date="2026-01-31",
+    )
+
+    assert result.meals[0].mealCount == "512"
+
+
 async def test_get_meals_invalid_date_range(monkeypatch: pytest.MonkeyPatch) -> None:
     _set_fake(monkeypatch, FakeNeisClient())
     with pytest.raises(ToolInputError):

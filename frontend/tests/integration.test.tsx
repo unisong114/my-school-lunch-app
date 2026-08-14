@@ -1,14 +1,15 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
-import { FluentProvider, webLightTheme } from "@fluentui/react-components";
+import { FluentProvider } from "@fluentui/react-components";
 import { describe, expect, it } from "vitest";
 import { App } from "../src/App";
+import { bankStyleTheme } from "../src/theme";
 import { server } from "./mocks/server";
 
 function renderApp() {
   return render(
-    <FluentProvider theme={webLightTheme}>
+    <FluentProvider theme={bankStyleTheme}>
       <App />
     </FluentProvider>,
   );
@@ -19,6 +20,19 @@ async function searchAndSelect(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole("button", { name: "검색" }));
   const result = await screen.findByText("서울고등학교");
   await user.click(result);
+}
+
+function formatDateInput(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+async function openAnalysisTab(user: ReturnType<typeof userEvent.setup>) {
+  renderApp();
+  await user.click(screen.getByRole("tab", { name: "급식 분석" }));
+  expect(await screen.findByText("한강중학교")).toBeInTheDocument();
 }
 
 describe("급식 조회 통합 흐름", () => {
@@ -123,4 +137,77 @@ describe("급식 조회 통합 흐름", () => {
       ).toBeInTheDocument(),
     );
   });
+});
+
+it("급식 분석 페이지에서 샘플 학교를 보여주고 2곳까지만 선택할 수 있다", async () => {
+  const user = userEvent.setup();
+
+  await openAnalysisTab(user);
+
+  expect(screen.getByText("선택된 학교: 0 / 2")).toBeInTheDocument();
+  expect(screen.getByText("서울고등학교")).toBeInTheDocument();
+  expect(screen.getByText("한밭초등학교")).toBeInTheDocument();
+
+  await user.click(screen.getByText("서울고등학교"));
+  await user.click(screen.getByText("한강중학교"));
+
+  expect(screen.getByText("선택된 학교: 2 / 2")).toBeInTheDocument();
+  expect(screen.getByText("A · 서울고등학교")).toBeInTheDocument();
+  expect(screen.getByText("B · 한강중학교")).toBeInTheDocument();
+
+  const thirdSchoolCard = screen
+    .getByText("한밭초등학교")
+    .closest('[role="button"]');
+  expect(thirdSchoolCard).toHaveAttribute("aria-disabled", "true");
+
+  await user.click(screen.getByRole("button", { name: "분석 시작" }));
+  expect(
+    await screen.findByText("분석 날짜를 선택해 주세요."),
+  ).toBeInTheDocument();
+});
+
+it("분석 날짜는 이번달/직전달 범위로 제한된다", async () => {
+  const user = userEvent.setup();
+  const today = new Date();
+  const currentMonthStart = formatDateInput(
+    new Date(today.getFullYear(), today.getMonth(), 1),
+  );
+  const currentMonthEnd = formatDateInput(
+    new Date(today.getFullYear(), today.getMonth(), today.getDate()),
+  );
+  const previousMonthStart = formatDateInput(
+    new Date(today.getFullYear(), today.getMonth() - 1, 1),
+  );
+  const previousMonthEnd = formatDateInput(
+    new Date(today.getFullYear(), today.getMonth(), 0),
+  );
+
+  await openAnalysisTab(user);
+
+  const dateInput = screen.getByLabelText("분석 날짜");
+  expect(dateInput).toHaveAttribute("min", currentMonthStart);
+  expect(dateInput).toHaveAttribute("max", currentMonthEnd);
+
+  await user.click(screen.getByLabelText("직전달"));
+  expect(dateInput).toHaveAttribute("min", previousMonthStart);
+  expect(dateInput).toHaveAttribute("max", previousMonthEnd);
+});
+
+it("학교 2곳과 날짜를 선택하면 기본 분석 프롬프트가 생성되고 수정할 수 있다", async () => {
+  const user = userEvent.setup();
+
+  await openAnalysisTab(user);
+
+  await user.click(screen.getByText("서울고등학교"));
+  await user.click(screen.getByText("한강중학교"));
+  await user.type(screen.getByLabelText("분석 날짜"), "2026-08-12");
+
+  const promptField = screen.getByLabelText("분석 요청문");
+  expect(promptField).toHaveValue(
+    "서울고등학교와 한강중학교의 2026년 8월 12일 중식 급식을 EVALUATION_RUBRIC.md 기준(영양 균형, 건강성, 식재료 및 메뉴 품질, 급식 참여도)으로 비교 평가해 주세요.",
+  );
+
+  await user.clear(promptField);
+  await user.type(promptField, "두 학교의 선호도 차이도 함께 설명해 주세요.");
+  expect(promptField).toHaveValue("두 학교의 선호도 차이도 함께 설명해 주세요.");
 });

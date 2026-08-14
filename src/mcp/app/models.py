@@ -45,6 +45,7 @@ class DailyMeal(BaseModel):
     calorie: str | None = Field(default=None, description="칼로리 정보")
     nutrition: str | None = Field(default=None, description="영양 정보")
     origin: str | None = Field(default=None, description="원산지 정보")
+    mealCount: str | None = Field(default=None, description="급식인원수")
 
 
 class MealSearchResult(BaseModel):

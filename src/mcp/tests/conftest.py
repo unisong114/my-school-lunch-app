@@ -47,6 +47,7 @@ MEAL_SUCCESS: dict[str, Any] = {
                     "CAL_INFO": "650.5 Kcal",
                     "NTR_INFO": "탄수화물(g) : 90.0",
                     "ORPLC_INFO": "쌀 : 국내산",
+                    "MLSV_FGR": "512",
                 },
                 {
                     "MLSV_YMD": "20260101",
@@ -55,6 +56,7 @@ MEAL_SUCCESS: dict[str, Any] = {
                     "CAL_INFO": "700.0 Kcal",
                     "NTR_INFO": "탄수화물(g) : 95.0",
                     "ORPLC_INFO": "김치 : 국내산",
+                    "MLSV_FGR": "498",
                 },
             ]
         },

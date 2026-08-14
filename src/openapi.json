@@ -32,6 +32,22 @@
         }
       }
     },
+    "/api/schools/sample": {
+      "get": {
+        "summary": "급식 분석용 무작위 학교 표본 10개 조회",
+        "operationId": "sampleSchools",
+        "responses": {
+          "200": {
+            "description": "고정 학교 표본 10개",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SchoolSearchResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/schools": {
       "get": {
         "summary": "부분 학교명으로 학교 검색",

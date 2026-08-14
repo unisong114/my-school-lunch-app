@@ -44,3 +44,18 @@ services:
     ports:
       - "8100:8100"
 
+  agent:
+    build:
+      context: ./agent
+    image: school-lunch-agent
+    depends_on:
+      - mcp
+    environment:
+      MCP_SERVER_URL: ${MCP_SERVER_URL:-http://mcp:8100/mcp}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-*}
+    expose:
+      - "9100"
+    ports:
+      - "9100:9100"
+

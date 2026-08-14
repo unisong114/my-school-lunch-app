@@ -57,6 +57,15 @@ def test_health() -> None:
     assert resp.json()["status"] == "ok"
 
 
+def test_sample_schools_returns_ten() -> None:
+    resp = _client(FakeNeisClient()).get("/api/schools/sample")
+    assert resp.status_code == 200
+    schools = resp.json()["schools"]
+    assert len(schools) == 10
+    codes = {(s["eduOfficeCode"], s["schoolCode"]) for s in schools}
+    assert len(codes) == 10  # 중복 없음
+
+
 def test_search_schools_ok() -> None:
     fake = FakeNeisClient(
         schools=[

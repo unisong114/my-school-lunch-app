@@ -57,11 +57,13 @@ def test_map_meals_sorts_by_date_and_parses_dishes() -> None:
     assert first.dishes[0].allergies == []
     assert first.dishes[1].name == "김치찌개"
     assert first.dishes[1].allergies == [5, 9, 10]
+    assert first.mealCount == "498"
 
     second = meals[1]
     assert [d.name for d in second.dishes] == ["기장밥", "미역국", "제육볶음"]
     assert second.dishes[0].allergies == [5, 6]
     assert second.calorie == "650.5 Kcal"
+    assert second.mealCount == "512"
 
 
 def test_map_meals_empty() -> None:

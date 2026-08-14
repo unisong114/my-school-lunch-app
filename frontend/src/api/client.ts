@@ -54,6 +54,11 @@ export function searchSchools(name: string): Promise<SchoolSearchResponse> {
   return request<SchoolSearchResponse>(`/api/schools?${params.toString()}`);
 }
 
+/** 급식 분석용 학교 샘플 10개를 불러옵니다. */
+export function sampleSchools(): Promise<SchoolSearchResponse> {
+  return request<SchoolSearchResponse>("/api/schools/sample");
+}
+
 /** 선택한 학교와 날짜 범위로 중식 급식을 조회합니다. */
 export function fetchMeals(args: {
   eduOfficeCode: string;

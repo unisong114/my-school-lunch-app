@@ -8,9 +8,23 @@ from ..dependencies import get_neis_client
 from ..exceptions import NeisUpstreamError
 from ..models import SchoolSearchResponse
 from ..neis_client import NeisClient
+from ..sample_schools import SAMPLE_SCHOOLS
 from ..services import map_schools
 
 router = APIRouter(prefix="/api", tags=["schools"])
+
+
+@router.get(
+    "/schools/sample",
+    response_model=SchoolSearchResponse,
+    summary="급식 분석용 무작위 학교 표본 10개 조회",
+)
+async def sample_schools() -> SchoolSearchResponse:
+    """급식 분석 페이지에서 비교 대상 학교를 고를 수 있도록 미리 선정한
+
+    10개 학교 표본을 반환합니다. NEIS를 호출하지 않는 고정 목록입니다.
+    """
+    return SchoolSearchResponse(schools=list(SAMPLE_SCHOOLS))
 
 
 @router.get(

@@ -108,6 +108,7 @@ def map_meals(rows: list[dict]) -> list[DailyMeal]:
                 calorie=(row.get("CAL_INFO") or None),
                 nutrition=(row.get("NTR_INFO") or None),
                 origin=(row.get("ORPLC_INFO") or None),
+                mealCount=(row.get("MLSV_FGR") or None),
             )
         )
     meals.sort(key=lambda meal: meal.date)
