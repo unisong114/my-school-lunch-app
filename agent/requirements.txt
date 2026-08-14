@@ -1,0 +1,10 @@
+agent-framework==1.14.0
+agent-framework-github-copilot==1.0.2
+agent-framework-devui==1.0.0b260813
+github-copilot-sdk==1.0.2
+ag-ui-protocol==0.1.19
+fastapi==0.138.0
+uvicorn[standard]==0.52.3
+httpx==0.28.1
+pydantic==2.13.4
+pydantic-settings==2.15.0

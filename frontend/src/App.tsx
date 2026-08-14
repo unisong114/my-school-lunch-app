@@ -4,6 +4,8 @@ import {
   Card,
   Divider,
   Subtitle1,
+  Tab,
+  TabList,
   Title1,
   makeStyles,
   tokens,
@@ -11,9 +13,12 @@ import {
 import { SchoolSearch } from "./components/SchoolSearch";
 import { DateRangePicker } from "./components/DateRangePicker";
 import { MealResults } from "./components/MealResults";
+import { LunchAnalysisPage } from "./components/LunchAnalysisPage";
 import { ApiError, fetchMeals } from "./api/client";
 import { bankStylePalette } from "./theme";
 import type { DailyMeal, School } from "./types";
+
+type AppTab = "lookup" | "analysis";
 
 const useStyles = makeStyles({
   page: {
@@ -34,9 +39,21 @@ const useStyles = makeStyles({
   },
   heroTitle: { color: bankStylePalette.navy },
   heroSubtitle: { color: bankStylePalette.navySoft },
+  tabBarWrap: {
+    position: "sticky",
+    top: 0,
+    zIndex: 10,
+    backgroundColor: "#F3F4F7",
+    padding: "0 16px",
+  },
+  tabBarInner: {
+    maxWidth: "880px",
+    margin: "0 auto",
+    paddingTop: "12px",
+  },
   content: {
     maxWidth: "880px",
-    margin: "-32px auto 0",
+    margin: "0 auto",
     padding: "0 16px 64px",
     display: "flex",
     flexDirection: "column",
@@ -80,6 +97,7 @@ function validateRange(from: string, to: string): string | null {
 
 export function App() {
   const styles = useStyles();
+  const [selectedTab, setSelectedTab] = useState<AppTab>("lookup");
   const [school, setSchool] = useState<School | null>(null);
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
@@ -139,59 +157,87 @@ export function App() {
       </header>
 
       <main className={styles.content}>
-        <Card className={styles.stepCard}>
-          <div className={styles.stepHeader}>
-            <span className={styles.stepBadge}>1</span>
-            <Subtitle1 className={styles.stepTitle}>
-              학교 검색 및 선택
-            </Subtitle1>
+        <div className={styles.tabBarWrap}>
+          <div className={styles.tabBarInner}>
+            <TabList
+              aria-label="급식 앱 페이지"
+              selectedValue={selectedTab}
+              size="large"
+              onTabSelect={(_, data) => setSelectedTab(data.value as AppTab)}
+            >
+              <Tab id="lookup-tab" value="lookup">
+                급식 조회
+              </Tab>
+              <Tab id="analysis-tab" value="analysis">
+                급식 분석
+              </Tab>
+            </TabList>
           </div>
-          <Divider />
-          <SchoolSearch selectedSchool={school} onSelect={handleSelectSchool} />
-        </Card>
+        </div>
 
-        {school && (
-          <Card className={styles.stepCard}>
-            <div className={styles.stepHeader}>
-              <span className={styles.stepBadge}>2</span>
-              <Subtitle1 className={styles.stepTitle}>
-                날짜 범위 선택 ({school.schoolName})
-              </Subtitle1>
-            </div>
-            <Divider />
-            <DateRangePicker
-              fromDate={fromDate}
-              toDate={toDate}
-              onFromChange={(value) => {
-                setFromDate(value);
-                setValidationError(null);
-              }}
-              onToChange={(value) => {
-                setToDate(value);
-                setValidationError(null);
-              }}
-              onSubmit={handleQuery}
-              disabled={!school}
-              loading={loading}
-              validationError={validationError}
-            />
-          </Card>
+        {selectedTab === "lookup" && (
+          <section aria-labelledby="lookup-tab">
+            <Card className={styles.stepCard}>
+              <div className={styles.stepHeader}>
+                <span className={styles.stepBadge}>1</span>
+                <Subtitle1 className={styles.stepTitle}>
+                  학교 검색 및 선택
+                </Subtitle1>
+              </div>
+              <Divider />
+              <SchoolSearch selectedSchool={school} onSelect={handleSelectSchool} />
+            </Card>
+
+            {school && (
+              <Card className={styles.stepCard} style={{ marginTop: 16 }}>
+                <div className={styles.stepHeader}>
+                  <span className={styles.stepBadge}>2</span>
+                  <Subtitle1 className={styles.stepTitle}>
+                    날짜 범위 선택 ({school.schoolName})
+                  </Subtitle1>
+                </div>
+                <Divider />
+                <DateRangePicker
+                  fromDate={fromDate}
+                  toDate={toDate}
+                  onFromChange={(value) => {
+                    setFromDate(value);
+                    setValidationError(null);
+                  }}
+                  onToChange={(value) => {
+                    setToDate(value);
+                    setValidationError(null);
+                  }}
+                  onSubmit={handleQuery}
+                  disabled={!school}
+                  loading={loading}
+                  validationError={validationError}
+                />
+              </Card>
+            )}
+
+            {school && (
+              <Card className={styles.stepCard} style={{ marginTop: 16 }}>
+                <div className={styles.stepHeader}>
+                  <span className={styles.stepBadge}>3</span>
+                  <Subtitle1 className={styles.stepTitle}>급식 결과</Subtitle1>
+                </div>
+                <Divider />
+                <MealResults
+                  meals={meals}
+                  loading={loading}
+                  error={mealError}
+                  schoolName={school.schoolName}
+                />
+              </Card>
+            )}
+          </section>
         )}
 
-        {school && (
-          <Card className={styles.stepCard}>
-            <div className={styles.stepHeader}>
-              <span className={styles.stepBadge}>3</span>
-              <Subtitle1 className={styles.stepTitle}>급식 결과</Subtitle1>
-            </div>
-            <Divider />
-            <MealResults
-              meals={meals}
-              loading={loading}
-              error={mealError}
-              schoolName={school.schoolName}
-            />
-          </Card>
+        {selectedTab === "analysis" && (
+          <section aria-labelledby="analysis-tab">
+            <LunchAnalysisPage />
+          </section>
         )}
       </main>
     </div>
