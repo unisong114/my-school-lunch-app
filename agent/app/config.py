@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     )
 
     mcp_server_url: str = Field(
-        default="http://localhost:9001/mcp",
+        default="http://localhost:8100/mcp",
         validation_alias="MCP_SERVER_URL",
         description="급식 MCP 서버의 Streamable HTTP 엔드포인트.",
     )

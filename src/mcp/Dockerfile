@@ -10,6 +10,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
 
-EXPOSE 9001
+EXPOSE 8100
 
-CMD ["python", "-m", "app.server"]
+CMD ["python", "-m", "app.main"]

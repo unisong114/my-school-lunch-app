@@ -1,19 +1,21 @@
-"""FastMCP 도구 통합 테스트."""
+"""MCP 도구(search_schools, get_meals) 통합 테스트.
+
+FastMCP의 ``@mcp.tool()`` 데코레이터는 원본 함수를 그대로 반환하므로, 도구
+함수를 직접 호출해 입력 검증, NEIS 클라이언트 연동, 오류 응답을 검증합니다.
+"""
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import pytest
-from mcp.shared.memory import create_connected_server_and_client_session
 
-from app.exceptions import NeisUpstreamError
-from app.server import create_mcp_server
+from app.exceptions import NeisUpstreamError, ToolInputError, ToolNoResultError
+from app.server import get_meals, search_schools
 
 
 class FakeNeisClient:
-    """테스트용 가짜 NEIS 클라이언트."""
+    """의존성 주입으로 교체할 가짜 NEIS 클라이언트."""
 
     def __init__(
         self,
@@ -40,29 +42,12 @@ class FakeNeisClient:
         return self._meals
 
 
-def _text(result: Any) -> str:
-    return result.content[0].text
+def _set_fake(monkeypatch: pytest.MonkeyPatch, fake: FakeNeisClient) -> None:
+    """``app.server`` 모듈이 참조하는 NEIS 클라이언트 팩토리를 가짜로 교체합니다."""
+    monkeypatch.setattr("app.server.get_neis_client", lambda: fake)
 
 
-@pytest.mark.asyncio
-async def test_list_tools_exposes_exact_names() -> None:
-    server = create_mcp_server(FakeNeisClient())
-    async with create_connected_server_and_client_session(server) as session:
-        tools = await session.list_tools()
-
-    tool_map = {tool.name: tool for tool in tools.tools}
-    assert set(tool_map) == {"search_schools", "get_meals"}
-    assert "name" in tool_map["search_schools"].inputSchema["properties"]
-    assert set(tool_map["get_meals"].inputSchema["properties"]) == {
-        "edu_office_code",
-        "school_code",
-        "from_date",
-        "to_date",
-    }
-
-
-@pytest.mark.asyncio
-async def test_search_schools_returns_json_array() -> None:
+async def test_search_schools_ok(monkeypatch: pytest.MonkeyPatch) -> None:
     fake = FakeNeisClient(
         schools=[
             {
@@ -70,131 +55,139 @@ async def test_search_schools_returns_json_array() -> None:
                 "ATPT_OFCDC_SC_NM": "서울특별시교육청",
                 "SD_SCHUL_CODE": "7010569",
                 "SCHUL_NM": "서울고등학교",
-                "SCHUL_KND_SC_NM": "고등학교",
                 "LCTN_SC_NM": "서울특별시",
-                "ORG_RDNMA": "서울특별시 서초구 남부순환로",
             }
         ]
     )
-    server = create_mcp_server(fake)
-    async with create_connected_server_and_client_session(server) as session:
-        result = await session.call_tool("search_schools", {"name": " 서울 "})
+    _set_fake(monkeypatch, fake)
 
-    assert result.isError is False
-    payload = json.loads(_text(result))
+    result = await search_schools(school_name="서울")
+
+    assert len(result.schools) == 1
+    assert result.schools[0].schoolName == "서울고등학교"
     assert fake.calls["search"] == "서울"
-    assert payload == [
-        {
-            "eduOfficeCode": "B10",
-            "eduOfficeName": "서울특별시교육청",
-            "schoolCode": "7010569",
-            "schoolName": "서울고등학교",
-            "schoolKind": "고등학교",
-            "region": "서울특별시",
-            "address": "서울특별시 서초구 남부순환로",
-        }
-    ]
 
 
-@pytest.mark.asyncio
-async def test_search_schools_maps_blank_input_to_mcp_error() -> None:
-    server = create_mcp_server(FakeNeisClient())
-    async with create_connected_server_and_client_session(server) as session:
-        result = await session.call_tool("search_schools", {"name": "   "})
-
-    assert result.isError is True
-    assert _text(result) == "학교 이름은(는) 비워 둘 수 없습니다."
+async def test_search_schools_requires_name(monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_fake(monkeypatch, FakeNeisClient())
+    with pytest.raises(ToolInputError):
+        await search_schools(school_name="  ")
 
 
-@pytest.mark.asyncio
-async def test_search_schools_maps_no_data_to_mcp_error() -> None:
-    server = create_mcp_server(FakeNeisClient(schools=[]))
-    async with create_connected_server_and_client_session(server) as session:
-        result = await session.call_tool("search_schools", {"name": "없는학교"})
-
-    assert result.isError is True
-    assert _text(result) == "조건에 맞는 학교를 찾을 수 없습니다."
+async def test_search_schools_no_result_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_fake(monkeypatch, FakeNeisClient(schools=[]))
+    with pytest.raises(ToolNoResultError):
+        await search_schools(school_name="존재하지않는학교")
 
 
-@pytest.mark.asyncio
-async def test_get_meals_returns_json_object_and_lunch_only() -> None:
+async def test_search_schools_upstream_error_is_sanitized(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = FakeNeisClient(
+        error=NeisUpstreamError("NEIS API 호출에 실패했습니다. 잠시 후 다시 시도해 주세요.")
+    )
+    _set_fake(monkeypatch, fake)
+    with pytest.raises(RuntimeError) as exc_info:
+        await search_schools(school_name="서울")
+    assert "test-key" not in str(exc_info.value)
+    assert "KEY=" not in str(exc_info.value)
+
+
+async def test_get_meals_ok_lunch_only(monkeypatch: pytest.MonkeyPatch) -> None:
     fake = FakeNeisClient(
         meals=[
             {
-                "MLSV_YMD": "20260102",
+                "MLSV_YMD": "20260101",
                 "MMEAL_SC_NM": "중식",
-                "DDISH_NM": "기장밥 (5.6.13)<br/>미역국 (5.9.)",
-                "CAL_INFO": "650.5 Kcal",
-                "NTR_INFO": "탄수화물(g) : 90.0",
-                "ORPLC_INFO": "쌀 : 국내산",
+                "DDISH_NM": "백미밥<br/>김치찌개 (5.9.)",
+                "CAL_INFO": "700 Kcal",
+            }
+        ]
+    )
+    _set_fake(monkeypatch, fake)
+
+    result = await get_meals(
+        edu_office_code="B10",
+        school_code="7010569",
+        from_date="2026-01-01",
+        to_date="2026-01-31",
+    )
+
+    assert result.schoolCode == "7010569"
+    assert len(result.meals) == 1
+    assert result.meals[0].dishes[1].allergies == [5, 9]
+    assert fake.calls["meals"]["meal_code"] == "2"
+
+
+async def test_get_meals_includes_meal_count(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = FakeNeisClient(
+        meals=[
+            {
+                "MLSV_YMD": "20260101",
+                "MMEAL_SC_NM": "중식",
+                "DDISH_NM": "백미밥",
                 "MLSV_FGR": "512",
             }
         ]
     )
-    server = create_mcp_server(fake)
-    async with create_connected_server_and_client_session(server) as session:
-        result = await session.call_tool(
-            "get_meals",
-            {
-                "edu_office_code": "B10",
-                "school_code": "7010569",
-                "from_date": "2026-01-01",
-                "to_date": "2026-01-31",
-            },
+    _set_fake(monkeypatch, fake)
+
+    result = await get_meals(
+        edu_office_code="B10",
+        school_code="7010569",
+        from_date="2026-01-01",
+        to_date="2026-01-31",
+    )
+
+    assert result.meals[0].mealCount == "512"
+
+
+async def test_get_meals_invalid_date_range(monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_fake(monkeypatch, FakeNeisClient())
+    with pytest.raises(ToolInputError):
+        await get_meals(
+            edu_office_code="B10",
+            school_code="7010569",
+            from_date="2026-02-01",
+            to_date="2026-01-01",
         )
 
-    assert result.isError is False
-    assert fake.calls["meals"]["meal_code"] == "2"
-    assert fake.calls["meals"]["from_ymd"] == "20260101"
-    payload = json.loads(_text(result))
-    assert payload["schoolCode"] == "7010569"
-    assert payload["meals"][0]["dishes"][0]["allergies"] == [5, 6, 13]
-    assert payload["meals"][0]["mealCount"] == "512"
-    assert result.structuredContent == payload
 
-
-@pytest.mark.asyncio
-async def test_get_meals_maps_invalid_date_to_mcp_error() -> None:
-    server = create_mcp_server(FakeNeisClient())
-    async with create_connected_server_and_client_session(server) as session:
-        result = await session.call_tool(
-            "get_meals",
-            {
-                "edu_office_code": "B10",
-                "school_code": "7010569",
-                "from_date": "2026-02-01",
-                "to_date": "2026-01-01",
-            },
+async def test_get_meals_requires_school_code(monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_fake(monkeypatch, FakeNeisClient())
+    with pytest.raises(ToolInputError):
+        await get_meals(
+            edu_office_code="B10",
+            school_code="  ",
+            from_date="2026-01-01",
+            to_date="2026-01-31",
         )
 
-    assert result.isError is True
-    assert _text(result) == "시작일은 종료일보다 늦을 수 없습니다."
 
-
-@pytest.mark.asyncio
-async def test_get_meals_maps_no_data_to_mcp_error() -> None:
-    server = create_mcp_server(FakeNeisClient(meals=[]))
-    async with create_connected_server_and_client_session(server) as session:
-        result = await session.call_tool(
-            "get_meals",
-            {
-                "edu_office_code": "B10",
-                "school_code": "7010569",
-                "from_date": "2026-01-01",
-                "to_date": "2026-01-31",
-            },
+async def test_get_meals_no_result_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_fake(monkeypatch, FakeNeisClient(meals=[]))
+    with pytest.raises(ToolNoResultError):
+        await get_meals(
+            edu_office_code="B10",
+            school_code="7010569",
+            from_date="2026-01-01",
+            to_date="2026-01-31",
         )
 
-    assert result.isError is True
-    assert _text(result) == "선택한 기간에 급식 정보가 없습니다."
 
-
-@pytest.mark.asyncio
-async def test_upstream_error_maps_to_mcp_error() -> None:
-    fake = FakeNeisClient(error=NeisUpstreamError("장애"))
-    server = create_mcp_server(fake)
-    async with create_connected_server_and_client_session(server) as session:
-        result = await session.call_tool("search_schools", {"name": "서울"})
-
-    assert result.isError is True
-    assert "잠시 후 다시 시도해 주세요." in _text(result)
+async def test_get_meals_upstream_error_is_sanitized(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = FakeNeisClient(
+        error=NeisUpstreamError("NEIS API 호출에 실패했습니다. 잠시 후 다시 시도해 주세요.")
+    )
+    _set_fake(monkeypatch, fake)
+    with pytest.raises(RuntimeError) as exc_info:
+        await get_meals(
+            edu_office_code="B10",
+            school_code="7010569",
+            from_date="2026-01-01",
+            to_date="2026-01-31",
+        )
+    assert "test-key" not in str(exc_info.value)
+    assert "KEY=" not in str(exc_info.value)

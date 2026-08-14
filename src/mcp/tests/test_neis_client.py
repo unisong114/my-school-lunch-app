@@ -1,4 +1,4 @@
-"""NEIS 클라이언트 단위 테스트."""
+"""NEIS 클라이언트 단위 테스트 (respx 로 HTTP 모킹)."""
 
 from __future__ import annotations
 
@@ -8,13 +8,13 @@ import respx
 
 from app.exceptions import NeisUpstreamError
 from app.neis_client import NeisClient
-from tests.conftest import ERROR_LIMIT, HEAD_ERROR, MEAL_SUCCESS, NO_DATA, SCHOOL_SUCCESS
+from tests.conftest import ERROR_LIMIT, MEAL_SUCCESS, NO_DATA, SCHOOL_SUCCESS
 
 BASE_URL = "https://open.neis.go.kr/hub"
 
 
-def _client(api_key: str = "test-key") -> NeisClient:
-    return NeisClient(base_url=BASE_URL, api_key=api_key)
+def _client() -> NeisClient:
+    return NeisClient(base_url=BASE_URL, api_key="test-key")
 
 
 @respx.mock
@@ -32,7 +32,7 @@ async def test_search_schools_no_data_returns_empty() -> None:
     respx.get(f"{BASE_URL}/schoolInfo").mock(
         return_value=httpx.Response(200, json=NO_DATA)
     )
-    rows = await _client().search_schools("없는학교")
+    rows = await _client().search_schools("존재하지않는학교")
     assert rows == []
 
 
@@ -55,17 +55,7 @@ async def test_fetch_meals_success_sends_lunch_code() -> None:
 
 
 @respx.mock
-async def test_blank_api_key_omits_key_param() -> None:
-    route = respx.get(f"{BASE_URL}/schoolInfo").mock(
-        return_value=httpx.Response(200, json=SCHOOL_SUCCESS)
-    )
-    await _client(api_key="").search_schools("서울")
-    request = route.calls.last.request
-    assert "KEY" not in request.url.params
-
-
-@respx.mock
-async def test_top_level_error_code_raises() -> None:
+async def test_upstream_error_code_raises() -> None:
     respx.get(f"{BASE_URL}/schoolInfo").mock(
         return_value=httpx.Response(200, json=ERROR_LIMIT)
     )
@@ -74,18 +64,12 @@ async def test_top_level_error_code_raises() -> None:
 
 
 @respx.mock
-async def test_head_error_code_raises() -> None:
-    respx.get(f"{BASE_URL}/schoolInfo").mock(
-        return_value=httpx.Response(200, json=HEAD_ERROR)
-    )
-    with pytest.raises(NeisUpstreamError):
-        await _client().search_schools("서울")
-
-
-@respx.mock
-async def test_http_error_raises() -> None:
+async def test_http_error_raises_without_leaking_request_details() -> None:
     respx.get(f"{BASE_URL}/schoolInfo").mock(
         return_value=httpx.Response(500, text="server error")
     )
-    with pytest.raises(NeisUpstreamError):
+    with pytest.raises(NeisUpstreamError) as exc_info:
         await _client().search_schools("서울")
+    # 오류 메시지에 요청 URL/인증 키 등 민감 정보가 포함되지 않아야 합니다.
+    assert "test-key" not in str(exc_info.value)
+    assert "KEY=" not in str(exc_info.value)

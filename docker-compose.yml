@@ -19,32 +19,6 @@ services:
       retries: 5
       start_period: 10s
 
-  mcp:
-    build:
-      context: ./src/mcp
-    image: school-lunch-mcp
-    environment:
-      NEIS_API_KEY: ${NEIS_API_KEY:-}
-    expose:
-      - "9001"
-    ports:
-      - "9001:9001"
-
-  agent:
-    build:
-      context: ./agent
-    image: school-lunch-agent
-    depends_on:
-      - mcp
-    environment:
-      MCP_SERVER_URL: ${MCP_SERVER_URL:-http://mcp:9001/mcp}
-      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
-      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-*}
-    expose:
-      - "9100"
-    ports:
-      - "9100:9100"
-
   frontend:
     build:
       context: ./frontend
@@ -54,3 +28,34 @@ services:
         condition: service_healthy
     ports:
       - "8080:80"
+
+  mcp:
+    build:
+      context: ./src/mcp
+    image: school-lunch-mcp
+    environment:
+      # NEIS API 키는 .env 파일 또는 셸 환경 변수로 주입합니다. 백엔드와는 별개로
+      # 이 서비스가 NEIS API를 직접 호출합니다.
+      NEIS_API_KEY: ${NEIS_API_KEY:-}
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: 8100
+    expose:
+      - "8100"
+    ports:
+      - "8100:8100"
+
+  agent:
+    build:
+      context: ./agent
+    image: school-lunch-agent
+    depends_on:
+      - mcp
+    environment:
+      MCP_SERVER_URL: ${MCP_SERVER_URL:-http://mcp:8100/mcp}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-*}
+    expose:
+      - "9100"
+    ports:
+      - "9100:9100"
+

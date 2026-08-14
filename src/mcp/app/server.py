@@ -1,140 +1,128 @@
-"""급식배틀 MCP 서버."""
+"""MCP 도구 정의.
 
-from __future__ import annotations
+공식 MCP Python SDK(``mcp`` 패키지, 1.x)의 FastMCP를 사용해 Streamable HTTP
+전송 방식의 MCP 서버를 구성합니다. 기존 백엔드 API 앱과는 독립적으로 동작하며,
+NEIS 공개 API(`data/openapi.json` 명세)를 직접 호출합니다.
 
-import json
-from functools import lru_cache
-from typing import Any
+주의: FastMCP는 도구 함수의 파라미터 타입을 런타임에 검사해 JSON 스키마를
+생성하므로, 이 모듈에서는 지연 평가(``from __future__ import annotations``)를
+사용하지 않습니다.
+"""
 
 from mcp.server.fastmcp import FastMCP
-from mcp.types import CallToolResult, TextContent
 
 from .config import get_settings
-from .exceptions import NeisUpstreamError
-from .models import MealQueryResponse
-from .neis_client import NeisClient
-from .services import (
-    InputValidationError,
-    map_meals,
-    map_schools,
-    to_neis_ymd,
-    validate_date_range,
-    validate_required_text,
-    validate_school_name,
+from .dependencies import get_neis_client
+from .exceptions import NeisUpstreamError, ToolInputError, ToolNoResultError
+from .models import MealSearchResult, SchoolSearchResult
+from .services import map_meals, map_schools, to_neis_ymd, validate_date_range
+
+# 중식(점심) 식사구분코드
+_LUNCH_MEAL_CODE = "2"
+
+_settings = get_settings()
+
+mcp = FastMCP(
+    "급식 배틀 MCP 서버",
+    host=_settings.mcp_host,
+    port=_settings.mcp_port,
 )
 
 
-@lru_cache
-def get_neis_client() -> NeisClient:
-    """NEIS 클라이언트 싱글턴을 반환합니다."""
-    settings = get_settings()
-    return NeisClient(
-        base_url=settings.neis_base_url,
-        api_key=settings.neis_api_key,
-        timeout=settings.neis_timeout_seconds,
+@mcp.tool(
+    name="search_schools",
+    description=(
+        "학교 이름의 일부를 입력해 후보 학교의 이름, 교육청 정보, 학교 식별"
+        " 정보(교육청코드·행정표준코드)를 조회합니다."
+    ),
+)
+async def search_schools(school_name: str) -> SchoolSearchResult:
+    """부분 학교명으로 후보 학교를 검색합니다.
+
+    Args:
+        school_name: 검색할 학교 이름의 일부 (예: "서울고").
+
+    Raises:
+        ToolInputError: ``school_name`` 이 비어 있는 경우.
+        ToolNoResultError: 일치하는 학교가 없는 경우.
+        RuntimeError: NEIS API 호출에 실패하거나 응답이 지연된 경우.
+    """
+    query = (school_name or "").strip()
+    if not query:
+        raise ToolInputError("학교명을 입력해 주세요.")
+
+    client = get_neis_client()
+    try:
+        rows = await client.search_schools(query)
+    except NeisUpstreamError as exc:
+        raise RuntimeError(
+            f"학교 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요. ({exc.message})"
+        ) from exc
+
+    schools = map_schools(rows)
+    if not schools:
+        raise ToolNoResultError(f"'{query}'와 일치하는 학교를 찾을 수 없습니다.")
+    return SchoolSearchResult(schools=schools)
+
+
+@mcp.tool(
+    name="get_meals",
+    description=(
+        "선택한 학교(교육청코드·행정표준코드)와 시작일·종료일을 입력하면 중식"
+        " 기준 날짜별 급식 정보를 조회합니다."
+    ),
+)
+async def get_meals(
+    edu_office_code: str,
+    school_code: str,
+    from_date: str,
+    to_date: str,
+) -> MealSearchResult:
+    """선택한 학교와 날짜 범위에 대해 중식 기준 급식을 조회합니다.
+
+    Args:
+        edu_office_code: 시도교육청코드 (ATPT_OFCDC_SC_CODE).
+        school_code: 행정표준코드 (SD_SCHUL_CODE).
+        from_date: 조회 시작일 (YYYY-MM-DD).
+        to_date: 조회 종료일 (YYYY-MM-DD).
+
+    Raises:
+        ToolInputError: 필수값이 비어 있거나 날짜 범위가 유효하지 않은 경우.
+        ToolNoResultError: 선택한 학교와 날짜 범위에 급식 정보가 없는 경우.
+        RuntimeError: NEIS API 호출에 실패하거나 응답이 지연된 경우.
+    """
+    edu_office = (edu_office_code or "").strip()
+    school = (school_code or "").strip()
+    if not edu_office:
+        raise ToolInputError("교육청코드(edu_office_code)를 입력해 주세요.")
+    if not school:
+        raise ToolInputError("행정표준코드(school_code)를 입력해 주세요.")
+
+    start, end = validate_date_range(from_date, to_date)
+
+    client = get_neis_client()
+    try:
+        rows = await client.fetch_meals(
+            edu_office_code=edu_office,
+            school_code=school,
+            from_ymd=to_neis_ymd(start),
+            to_ymd=to_neis_ymd(end),
+            meal_code=_LUNCH_MEAL_CODE,
+        )
+    except NeisUpstreamError as exc:
+        raise RuntimeError(
+            f"급식 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요. ({exc.message})"
+        ) from exc
+
+    meals = map_meals(rows)
+    if not meals:
+        raise ToolNoResultError(
+            f"선택한 학교(school_code={school})와 날짜 범위"
+            f"({from_date} ~ {to_date})에 대한 급식 정보가 없습니다."
+        )
+    return MealSearchResult(
+        schoolCode=school,
+        fromDate=from_date,
+        toDate=to_date,
+        meals=meals,
     )
-
-
-def _json_result(payload: list[dict[str, Any]] | dict[str, Any]) -> CallToolResult:
-    return CallToolResult(
-        content=[
-            TextContent(
-                type="text",
-                text=json.dumps(payload, ensure_ascii=False, indent=2),
-            )
-        ],
-        structuredContent=payload if isinstance(payload, dict) else None,
-    )
-
-
-def _error_result(message: str) -> CallToolResult:
-    return CallToolResult(
-        isError=True,
-        content=[TextContent(type="text", text=message)],
-    )
-
-
-def create_mcp_server(neis_client: NeisClient | Any | None = None) -> FastMCP:
-    """FastMCP 서버를 생성합니다."""
-    settings = get_settings()
-    resolved_client = neis_client
-
-    def get_client() -> NeisClient | Any:
-        return resolved_client or get_neis_client()
-
-    server = FastMCP(
-        name="geupsik-battle-mcp",
-        instructions="학교 검색과 중식 급식 조회 도구를 제공합니다.",
-        host=settings.mcp_host,
-        port=settings.mcp_port,
-        streamable_http_path="/mcp",
-    )
-
-    @server.tool(name="search_schools", description="부분 학교명으로 후보 학교를 검색합니다.")
-    async def search_schools(name: str) -> CallToolResult:
-        try:
-            school_name = validate_school_name(name)
-            schools = map_schools(await get_client().search_schools(school_name))
-        except InputValidationError as exc:
-            return _error_result(str(exc))
-        except NeisUpstreamError:
-            return _error_result("학교 검색 중 NEIS 서비스 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.")
-
-        if not schools:
-            return _error_result("조건에 맞는 학교를 찾을 수 없습니다.")
-
-        payload = [school.model_dump(mode="json", by_alias=True) for school in schools]
-        return _json_result(payload)
-
-    @server.tool(
-        name="get_meals",
-        description="학교 코드와 날짜 범위로 중식 급식 정보를 조회합니다.",
-    )
-    async def get_meals(
-        edu_office_code: str,
-        school_code: str,
-        from_date: str,
-        to_date: str,
-    ) -> CallToolResult:
-        try:
-            edu_code = validate_required_text(edu_office_code, "교육청 코드")
-            school = validate_required_text(school_code, "학교 코드")
-            start, end = validate_date_range(from_date, to_date)
-            meals = map_meals(
-                await get_client().fetch_meals(
-                    edu_office_code=edu_code,
-                    school_code=school,
-                    from_ymd=to_neis_ymd(start),
-                    to_ymd=to_neis_ymd(end),
-                    meal_code="2",
-                )
-            )
-        except InputValidationError as exc:
-            return _error_result(str(exc))
-        except NeisUpstreamError:
-            return _error_result("급식 조회 중 NEIS 서비스 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.")
-
-        if not meals:
-            return _error_result("선택한 기간에 급식 정보가 없습니다.")
-
-        payload = MealQueryResponse(
-            schoolCode=school,
-            fromDate=from_date,
-            toDate=to_date,
-            meals=meals,
-        ).model_dump(mode="json", by_alias=True)
-        return _json_result(payload)
-
-    return server
-
-
-mcp = create_mcp_server()
-
-
-def main() -> None:
-    """Streamable HTTP MCP 서버를 실행합니다."""
-    mcp.run(transport="streamable-http")
-
-
-if __name__ == "__main__":
-    main()

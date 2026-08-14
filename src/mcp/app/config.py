@@ -1,4 +1,8 @@
-"""환경 변수 기반 MCP 서버 설정."""
+"""애플리케이션 설정.
+
+환경 변수에서 NEIS API 연동 및 MCP 서버 바인딩에 필요한 값을 읽어들입니다.
+민감한 정보(API 키)는 서버 측에서만 관리하며 MCP 클라이언트로 노출되지 않습니다.
+"""
 
 from __future__ import annotations
 
@@ -9,7 +13,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """MCP 서버 설정."""
+    """환경 변수 기반 애플리케이션 설정."""
 
     model_config = SettingsConfigDict(
         env_prefix="",
@@ -21,7 +25,7 @@ class Settings(BaseSettings):
     neis_api_key: str = Field(
         default="",
         validation_alias="NEIS_API_KEY",
-        description="NEIS 공개 API 인증 키. 비어 있으면 비인증 호출로 동작합니다.",
+        description="NEIS 공개 API 인증 키. 비어 있으면 샘플(맛보기) 키로 동작합니다.",
     )
     neis_base_url: str = Field(
         default="https://open.neis.go.kr/hub",
@@ -36,12 +40,12 @@ class Settings(BaseSettings):
     mcp_host: str = Field(
         default="0.0.0.0",
         validation_alias="MCP_HOST",
-        description="MCP 서버 바인드 호스트.",
+        description="MCP 서버(Streamable HTTP)가 바인딩할 호스트.",
     )
     mcp_port: int = Field(
-        default=9001,
+        default=8100,
         validation_alias="MCP_PORT",
-        description="MCP 서버 바인드 포트.",
+        description="MCP 서버(Streamable HTTP)가 바인딩할 포트.",
     )
 
 

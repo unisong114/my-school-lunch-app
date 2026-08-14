@@ -1,4 +1,4 @@
-"""MCP 서버 테스트 공용 데이터."""
+"""테스트 공용 픽스처 및 NEIS 샘플 응답."""
 
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ MEAL_SUCCESS: dict[str, Any] = {
                 {
                     "MLSV_YMD": "20260102",
                     "MMEAL_SC_NM": "중식",
-                    "DDISH_NM": "기장밥 (5.6.13)<br/>미역국 (5.9.)<br/>제육볶음",
+                    "DDISH_NM": "기장밥 (5.6.)<br/>미역국 (5.9.)<br/>제육볶음",
                     "CAL_INFO": "650.5 Kcal",
                     "NTR_INFO": "탄수화물(g) : 90.0",
                     "ORPLC_INFO": "쌀 : 국내산",
@@ -71,30 +71,14 @@ ERROR_LIMIT: dict[str, Any] = {
     "RESULT": {"CODE": "INFO-300", "MESSAGE": "인증키가 유효하지 않습니다."}
 }
 
-HEAD_ERROR: dict[str, Any] = {
-    "schoolInfo": [
-        {
-            "head": [
-                {"list_total_count": 0},
-                {"RESULT": {"CODE": "ERROR-500", "MESSAGE": "상위 오류"}},
-            ]
-        }
-    ]
-}
-
 
 @pytest.fixture(autouse=True)
 def _test_settings(monkeypatch: pytest.MonkeyPatch) -> None:
-    """테스트 설정을 고정합니다."""
+    """테스트에서는 고정된 설정을 사용하도록 캐시를 초기화합니다."""
     from app.config import get_settings
-    from app.server import get_neis_client
 
     monkeypatch.setenv("NEIS_API_KEY", "test-key")
     monkeypatch.setenv("NEIS_BASE_URL", "https://open.neis.go.kr/hub")
-    monkeypatch.setenv("MCP_HOST", "127.0.0.1")
-    monkeypatch.setenv("MCP_PORT", "9001")
     get_settings.cache_clear()
-    get_neis_client.cache_clear()
     yield
     get_settings.cache_clear()
-    get_neis_client.cache_clear()

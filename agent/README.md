@@ -50,7 +50,7 @@ python -m pip install -r requirements.txt -r requirements-dev.txt
 
 | 변수 | 기본값 | 설명 |
 |---|---|---|
-| `MCP_SERVER_URL` | `http://localhost:9001/mcp` | 급식 MCP 서버 URL |
+| `MCP_SERVER_URL` | `http://localhost:8100/mcp` | 급식 MCP 서버 URL |
 | `CORS_ALLOW_ORIGINS` | `*` | 쉼표 구분 허용 Origin |
 | `HOST` | `0.0.0.0` | 서버 바인드 호스트 |
 | `PORT` | `9100` | 서버 포트 |
