@@ -1,5 +1,7 @@
 import { useState } from "react";
 import {
+  Body1,
+  Card,
   Divider,
   Subtitle1,
   Title1,
@@ -10,26 +12,59 @@ import { SchoolSearch } from "./components/SchoolSearch";
 import { DateRangePicker } from "./components/DateRangePicker";
 import { MealResults } from "./components/MealResults";
 import { ApiError, fetchMeals } from "./api/client";
+import { bankStylePalette } from "./theme";
 import type { DailyMeal, School } from "./types";
 
 const useStyles = makeStyles({
   page: {
+    minHeight: "100vh",
+    backgroundColor: "#F3F4F7",
+  },
+  hero: {
+    background: `linear-gradient(135deg, ${bankStylePalette.gold} 0%, #FFCF52 100%)`,
+    borderBottomLeftRadius: "28px",
+    borderBottomRightRadius: "28px",
+    padding: "40px 24px 56px",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    textAlign: "center",
+    gap: "6px",
+    boxShadow: "0 4px 16px rgba(27, 42, 74, 0.15)",
+  },
+  heroTitle: { color: bankStylePalette.navy },
+  heroSubtitle: { color: bankStylePalette.navySoft },
+  content: {
     maxWidth: "880px",
-    margin: "0 auto",
-    padding: "24px 16px 64px",
+    margin: "-32px auto 0",
+    padding: "0 16px 64px",
     display: "flex",
     flexDirection: "column",
-    gap: "8px",
+    gap: "16px",
   },
-  header: { marginBottom: "8px" },
-  subtitle: { color: tokens.colorNeutralForeground3 },
-  step: {
-    marginTop: "20px",
+  stepCard: {
+    padding: "20px",
+    borderRadius: tokens.borderRadiusXLarge,
+    boxShadow: "0 2px 10px rgba(27, 42, 74, 0.08)",
     display: "flex",
     flexDirection: "column",
-    gap: "8px",
+    gap: "12px",
   },
-  stepLabel: { color: tokens.colorBrandForeground1 },
+  stepHeader: { display: "flex", alignItems: "center", gap: "10px" },
+  stepBadge: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: "28px",
+    height: "28px",
+    borderRadius: "50%",
+    backgroundColor: bankStylePalette.gold,
+    color: bankStylePalette.navy,
+    fontWeight: 700,
+    fontSize: "14px",
+    flexShrink: 0,
+  },
+  stepTitle: { color: bankStylePalette.navy },
 });
 
 /** 시작일이 종료일보다 이후인지 검증합니다. */
@@ -93,56 +128,72 @@ export function App() {
   }
 
   return (
-    <main className={styles.page}>
-      <header className={styles.header}>
-        <Title1 as="h1">🍱 급식 배틀</Title1>
-        <Subtitle1 className={styles.subtitle} as="p">
+    <div className={styles.page}>
+      <header className={styles.hero}>
+        <Title1 as="h1" className={styles.heroTitle}>
+          🍱 급식 배틀
+        </Title1>
+        <Body1 as="p" className={styles.heroSubtitle}>
           학교를 검색하고 날짜 범위를 선택하면 중식 급식을 보여드립니다.
-        </Subtitle1>
+        </Body1>
       </header>
 
-      <Divider />
+      <main className={styles.content}>
+        <Card className={styles.stepCard}>
+          <div className={styles.stepHeader}>
+            <span className={styles.stepBadge}>1</span>
+            <Subtitle1 className={styles.stepTitle}>
+              학교 검색 및 선택
+            </Subtitle1>
+          </div>
+          <Divider />
+          <SchoolSearch selectedSchool={school} onSelect={handleSelectSchool} />
+        </Card>
 
-      <div className={styles.step}>
-        <Subtitle1 className={styles.stepLabel}>1. 학교 검색 및 선택</Subtitle1>
-        <SchoolSearch selectedSchool={school} onSelect={handleSelectSchool} />
-      </div>
+        {school && (
+          <Card className={styles.stepCard}>
+            <div className={styles.stepHeader}>
+              <span className={styles.stepBadge}>2</span>
+              <Subtitle1 className={styles.stepTitle}>
+                날짜 범위 선택 ({school.schoolName})
+              </Subtitle1>
+            </div>
+            <Divider />
+            <DateRangePicker
+              fromDate={fromDate}
+              toDate={toDate}
+              onFromChange={(value) => {
+                setFromDate(value);
+                setValidationError(null);
+              }}
+              onToChange={(value) => {
+                setToDate(value);
+                setValidationError(null);
+              }}
+              onSubmit={handleQuery}
+              disabled={!school}
+              loading={loading}
+              validationError={validationError}
+            />
+          </Card>
+        )}
 
-      {school && (
-        <div className={styles.step}>
-          <Subtitle1 className={styles.stepLabel}>
-            2. 날짜 범위 선택 ({school.schoolName})
-          </Subtitle1>
-          <DateRangePicker
-            fromDate={fromDate}
-            toDate={toDate}
-            onFromChange={(value) => {
-              setFromDate(value);
-              setValidationError(null);
-            }}
-            onToChange={(value) => {
-              setToDate(value);
-              setValidationError(null);
-            }}
-            onSubmit={handleQuery}
-            disabled={!school}
-            loading={loading}
-            validationError={validationError}
-          />
-        </div>
-      )}
-
-      {school && (
-        <div className={styles.step}>
-          <Subtitle1 className={styles.stepLabel}>3. 급식 결과</Subtitle1>
-          <MealResults
-            meals={meals}
-            loading={loading}
-            error={mealError}
-            schoolName={school.schoolName}
-          />
-        </div>
-      )}
-    </main>
+        {school && (
+          <Card className={styles.stepCard}>
+            <div className={styles.stepHeader}>
+              <span className={styles.stepBadge}>3</span>
+              <Subtitle1 className={styles.stepTitle}>급식 결과</Subtitle1>
+            </div>
+            <Divider />
+            <MealResults
+              meals={meals}
+              loading={loading}
+              error={mealError}
+              schoolName={school.schoolName}
+            />
+          </Card>
+        )}
+      </main>
+    </div>
   );
 }

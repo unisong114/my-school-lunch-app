@@ -1,7 +1,8 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { FluentProvider, webLightTheme } from "@fluentui/react-components";
+import { FluentProvider } from "@fluentui/react-components";
 import { App } from "./App";
+import { bankStyleTheme } from "./theme";
 
 const container = document.getElementById("root");
 if (!container) {
@@ -10,7 +11,7 @@ if (!container) {
 
 createRoot(container).render(
   <StrictMode>
-    <FluentProvider theme={webLightTheme}>
+    <FluentProvider theme={bankStyleTheme}>
       <App />
     </FluentProvider>
   </StrictMode>,

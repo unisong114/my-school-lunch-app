@@ -22,6 +22,17 @@ async function searchAndSelect(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe("급식 조회 통합 흐름", () => {
+  it("일부 키워드만 입력하면 버튼 클릭 없이 자동으로 검색 결과가 표시된다", async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.type(screen.getByLabelText("학교 이름 검색"), "서울");
+
+    expect(
+      await screen.findByText("서울고등학교", undefined, { timeout: 2000 }),
+    ).toBeInTheDocument();
+  });
+
   it("학교 검색 → 날짜 선택 → 급식 결과를 표시한다", async () => {
     const user = userEvent.setup();
     renderApp();

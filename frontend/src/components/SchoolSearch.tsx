@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   Body1,
   Button,
@@ -17,6 +17,10 @@ import {
 import { SearchRegular } from "@fluentui/react-icons";
 import { searchSchools, ApiError } from "../api/client";
 import type { School } from "../types";
+
+// 자동완성 debounce 지연(ms) 및 최소 입력 글자 수.
+const AUTO_SEARCH_DELAY_MS = 300;
+const MIN_QUERY_LENGTH = 1;
 
 const useStyles = makeStyles({
   form: { display: "flex", gap: "8px", alignItems: "flex-end" },
@@ -51,20 +55,29 @@ export function SchoolSearch({ selectedSchool, onSelect }: SchoolSearchProps) {
   const [error, setError] = useState<string | null>(null);
   const [searched, setSearched] = useState(false);
 
-  async function handleSubmit(event: FormEvent) {
-    event.preventDefault();
-    const name = query.trim();
-    if (!name) {
-      setError("학교 이름을 입력해 주세요.");
-      return;
+  // 최신 요청만 반영하기 위한 순번 (오래된 응답이 늦게 도착해도 무시).
+  const requestIdRef = useRef(0);
+  // 대기 중인 자동완성 debounce 타이머 (명시적 제출 시 취소하기 위해 보관).
+  const debounceTimerRef = useRef<number | null>(null);
+
+  function clearPendingAutoSearch() {
+    if (debounceTimerRef.current !== null) {
+      window.clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
     }
+  }
+
+  async function runSearch(name: string) {
+    const requestId = ++requestIdRef.current;
     setLoading(true);
     setError(null);
     try {
       const result = await searchSchools(name);
+      if (requestId !== requestIdRef.current) return; // 최신 요청이 아니면 무시
       setSchools(result.schools);
       setSearched(true);
     } catch (err) {
+      if (requestId !== requestIdRef.current) return;
       const message =
         err instanceof ApiError
           ? err.message
@@ -73,8 +86,38 @@ export function SchoolSearch({ selectedSchool, onSelect }: SchoolSearchProps) {
       setSchools([]);
       setSearched(true);
     } finally {
-      setLoading(false);
+      if (requestId === requestIdRef.current) setLoading(false);
     }
+  }
+
+  // 입력 중 일부 키워드만으로도 자동완성처럼 검색 결과를 표시합니다 (debounce 적용).
+  useEffect(() => {
+    clearPendingAutoSearch();
+    const name = query.trim();
+    if (name.length < MIN_QUERY_LENGTH) {
+      requestIdRef.current += 1; // 진행 중이던 요청 결과를 무효화
+      setSchools([]);
+      setSearched(false);
+      setError(null);
+      return;
+    }
+    debounceTimerRef.current = window.setTimeout(() => {
+      debounceTimerRef.current = null;
+      void runSearch(name);
+    }, AUTO_SEARCH_DELAY_MS);
+    return clearPendingAutoSearch;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
+
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    clearPendingAutoSearch();
+    const name = query.trim();
+    if (!name) {
+      setError("학교 이름을 입력해 주세요.");
+      return;
+    }
+    await runSearch(name);
   }
 
   return (
