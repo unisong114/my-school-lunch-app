@@ -28,3 +28,19 @@ services:
         condition: service_healthy
     ports:
       - "8080:80"
+
+  mcp:
+    build:
+      context: ./src/mcp
+    image: school-lunch-mcp
+    environment:
+      # NEIS API 키는 .env 파일 또는 셸 환경 변수로 주입합니다. 백엔드와는 별개로
+      # 이 서비스가 NEIS API를 직접 호출합니다.
+      NEIS_API_KEY: ${NEIS_API_KEY:-}
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: 8100
+    expose:
+      - "8100"
+    ports:
+      - "8100:8100"
+
