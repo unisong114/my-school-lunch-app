@@ -51,6 +51,21 @@ def _format_ymd(raw: str) -> str:
     return raw
 
 
+def _stringify(raw: object) -> str | None:
+    """NEIS 응답 값을 문자열로 정규화합니다.
+
+    ``MLSV_FGR``(급식인원수) 등 일부 필드는 NEIS가 문자열이 아닌 숫자(int/float)로
+    내려주는 경우가 있어, Pydantic 모델의 ``str`` 필드 검증 오류를 막기 위해
+    명시적으로 문자열 변환한다. 정수값 float(예: ``635.0``)는 ``.0``을 제거해
+    사람이 읽기 자연스러운 정수 표기로 변환한다.
+    """
+    if raw is None or raw == "":
+        return None
+    if isinstance(raw, float) and raw.is_integer():
+        return str(int(raw))
+    return str(raw)
+
+
 def _parse_dishes(raw: str | None) -> list[MealDish]:
     """``DDISH_NM`` 문자열을 요리 목록으로 파싱합니다.
 
@@ -108,7 +123,7 @@ def map_meals(rows: list[dict]) -> list[DailyMeal]:
                 calorie=(row.get("CAL_INFO") or None),
                 nutrition=(row.get("NTR_INFO") or None),
                 origin=(row.get("ORPLC_INFO") or None),
-                mealCount=(row.get("MLSV_FGR") or None),
+                mealCount=_stringify(row.get("MLSV_FGR")),
             )
         )
     meals.sort(key=lambda meal: meal.date)

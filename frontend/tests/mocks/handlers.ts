@@ -117,7 +117,12 @@ export const handlers = [
     if (name.includes("없는")) {
       return HttpResponse.json({ schools: [] });
     }
-    return HttpResponse.json({ schools: [SEOUL_HIGH] });
+    const matches = SAMPLE_SCHOOLS.filter((school) =>
+      school.schoolName.includes(name),
+    );
+    return HttpResponse.json({
+      schools: matches.length > 0 ? matches : [SEOUL_HIGH],
+    });
   }),
   http.get("/api/schools/sample", () => {
     return HttpResponse.json({ schools: SAMPLE_SCHOOLS });

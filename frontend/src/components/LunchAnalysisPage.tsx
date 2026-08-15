@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Body1,
   Button,
   Caption1,
   Card,
@@ -14,15 +13,15 @@ import {
   Subtitle1,
   Textarea,
   makeStyles,
-  mergeClasses,
   tokens,
 } from "@fluentui/react-components";
 import { PlayRegular } from "@fluentui/react-icons";
-import { sampleSchools, ApiError } from "../api/client";
+import { ApiError } from "../api/client";
 import { streamLunchAnalysis } from "../api/agentClient";
 import { bankStylePalette } from "../theme";
 import type { LunchBattleResult, School } from "../types";
 import { AnalysisResult } from "./AnalysisResult";
+import { SchoolSearch } from "./SchoolSearch";
 
 type AnalysisMonth = "current" | "previous";
 
@@ -62,38 +61,17 @@ const useStyles = makeStyles({
     flexShrink: 0,
   },
   stepTitle: { color: bankStylePalette.navy },
-  cardGrid: {
+  schoolSearchGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-    gap: "12px",
+    gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+    gap: "16px",
   },
-  schoolCard: {
-    cursor: "pointer",
-    padding: "14px",
+  schoolSearchColumn: {
     display: "flex",
     flexDirection: "column",
-    gap: "6px",
-    borderRadius: tokens.borderRadiusXLarge,
-    transitionDuration: tokens.durationNormal,
-    transitionProperty: "transform, box-shadow, border-color",
-    ":hover": {
-      transform: "translateY(-1px)",
-      boxShadow: tokens.shadow8,
-    },
+    gap: "8px",
   },
-  schoolCardDisabled: {
-    cursor: "not-allowed",
-    opacity: 0.5,
-    ":hover": {
-      transform: "none",
-      boxShadow: "none",
-    },
-  },
-  schoolCardSelected: {
-    outline: `2px solid ${bankStylePalette.gold}`,
-    backgroundColor: "#FFF9EA",
-  },
-  schoolMeta: { color: tokens.colorNeutralForeground3 },
+  schoolSearchLabel: { color: bankStylePalette.navy },
   selectedSummary: {
     display: "flex",
     flexWrap: "wrap",
@@ -164,27 +142,28 @@ function buildDefaultPrompt(
   return `${schoolA.schoolName}와 ${schoolB.schoolName}의 ${formatKoreanDate(date)} 중식 급식을 EVALUATION_RUBRIC.md 기준(영양 균형, 건강성, 식재료 및 메뉴 품질, 급식 참여도)으로 비교 평가해 주세요.`;
 }
 
-function isSelectedSchool(selectedSchools: School[], school: School): boolean {
-  return selectedSchools.some(
-    (selected) =>
-      selected.schoolCode === school.schoolCode &&
-      selected.eduOfficeCode === school.eduOfficeCode,
-  );
+function isSameSchool(a: School | null, b: School | null): boolean {
+  if (!a || !b) {
+    return false;
+  }
+  return a.schoolCode === b.schoolCode && a.eduOfficeCode === b.eduOfficeCode;
 }
 
-function asSelectedPair(selectedSchools: School[]): [School, School] | null {
-  return selectedSchools.length === 2
-    ? [selectedSchools[0], selectedSchools[1]]
-    : null;
+function asSelectedPair(
+  schoolA: School | null,
+  schoolB: School | null,
+): [School, School] | null {
+  if (!schoolA || !schoolB || isSameSchool(schoolA, schoolB)) {
+    return null;
+  }
+  return [schoolA, schoolB];
 }
 
 export function LunchAnalysisPage() {
   const styles = useStyles();
   const today = useMemo(() => new Date(), []);
-  const [schools, setSchools] = useState<School[]>([]);
-  const [sampleLoading, setSampleLoading] = useState(false);
-  const [sampleError, setSampleError] = useState<string | null>(null);
-  const [selectedSchools, setSelectedSchools] = useState<School[]>([]);
+  const [schoolA, setSchoolA] = useState<School | null>(null);
+  const [schoolB, setSchoolB] = useState<School | null>(null);
   const [schoolValidationError, setSchoolValidationError] = useState<string | null>(
     null,
   );
@@ -197,49 +176,17 @@ export function LunchAnalysisPage() {
   const [analysisProgress, setAnalysisProgress] = useState("");
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [analysisResult, setAnalysisResult] = useState<LunchBattleResult | null>(null);
-  const requestIdRef = useRef(0);
   const lastAutoPromptRef = useRef("");
 
   const monthRange = useMemo(
     () => getMonthRange(today, selectedMonth),
     [selectedMonth, today],
   );
-  const selectedPair = asSelectedPair(selectedSchools);
+  const selectedPair = asSelectedPair(schoolA, schoolB);
   const generatedPrompt =
     selectedPair && selectedDate
       ? buildDefaultPrompt(selectedPair, selectedDate)
       : "";
-
-  async function loadSampleSchools() {
-    const requestId = ++requestIdRef.current;
-    setSampleLoading(true);
-    setSampleError(null);
-    try {
-      const result = await sampleSchools();
-      if (requestId !== requestIdRef.current) {
-        return;
-      }
-      setSchools(result.schools);
-    } catch (error) {
-      if (requestId !== requestIdRef.current) {
-        return;
-      }
-      setSampleError(
-        error instanceof ApiError
-          ? error.message
-          : "학교 샘플을 불러오는 중 오류가 발생했습니다.",
-      );
-    } finally {
-      if (requestId === requestIdRef.current) {
-        setSampleLoading(false);
-      }
-    }
-  }
-
-  useEffect(() => {
-    void loadSampleSchools();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   useEffect(() => {
     if (selectedDate && (selectedDate < monthRange.min || selectedDate > monthRange.max)) {
@@ -269,23 +216,22 @@ export function LunchAnalysisPage() {
     setAnalysisResult(null);
   }
 
-  function handleToggleSchool(school: School) {
-    const alreadySelected = isSelectedSchool(selectedSchools, school);
-    const nextSelectedSchools = alreadySelected
-      ? selectedSchools.filter(
-          (selected) =>
-            !(
-              selected.schoolCode === school.schoolCode &&
-              selected.eduOfficeCode === school.eduOfficeCode
-            ),
-        )
-      : [...selectedSchools, school];
-
-    if (!alreadySelected && selectedSchools.length >= 2) {
+  function handleSelectSchoolA(school: School) {
+    if (isSameSchool(school, schoolB)) {
+      setSchoolValidationError("학교 A와 B는 서로 다른 학교여야 합니다.");
       return;
     }
+    setSchoolA(school);
+    setSchoolValidationError(null);
+    resetAnalysisOutput();
+  }
 
-    setSelectedSchools(nextSelectedSchools);
+  function handleSelectSchoolB(school: School) {
+    if (isSameSchool(schoolA, school)) {
+      setSchoolValidationError("학교 A와 B는 서로 다른 학교여야 합니다.");
+      return;
+    }
+    setSchoolB(school);
     setSchoolValidationError(null);
     resetAnalysisOutput();
   }
@@ -303,17 +249,12 @@ export function LunchAnalysisPage() {
   }
 
   async function handleStartAnalysis() {
-    const hasTwoSchools = selectedSchools.length === 2;
+    const hasTwoSchools = selectedPair !== null;
     const hasDate = selectedDate.length > 0;
-    setSchoolValidationError(hasTwoSchools ? null : "학교를 2개 선택해 주세요.");
+    setSchoolValidationError(hasTwoSchools ? null : "서로 다른 학교 2곳을 선택해 주세요.");
     setDateValidationError(hasDate ? null : "분석 날짜를 선택해 주세요.");
 
-    if (!hasTwoSchools || !hasDate) {
-      return;
-    }
-
-    const selectedPairValue = asSelectedPair(selectedSchools);
-    if (!selectedPairValue) {
+    if (!selectedPair || !hasDate) {
       return;
     }
 
@@ -331,8 +272,8 @@ export function LunchAnalysisPage() {
     try {
       await streamLunchAnalysis(
         {
-          schoolA: selectedPairValue[0],
-          schoolB: selectedPairValue[1],
+          schoolA: selectedPair[0],
+          schoolB: selectedPair[1],
           date: selectedDate,
           prompt: trimmedPrompt,
         },
@@ -362,82 +303,34 @@ export function LunchAnalysisPage() {
         </div>
         <Divider />
 
-        {sampleLoading && (
-          <div role="status" aria-live="polite">
-            <Spinner label="분석용 학교 샘플을 불러오는 중..." />
+        <div className={styles.selectedSummary}>
+          {schoolA && (
+            <span className={styles.selectedChip}>A · {schoolA.schoolName}</span>
+          )}
+          {schoolB && (
+            <span className={styles.selectedChip}>B · {schoolB.schoolName}</span>
+          )}
+        </div>
+
+        <div className={styles.schoolSearchGrid}>
+          <div className={styles.schoolSearchColumn}>
+            <Caption1 className={styles.schoolSearchLabel}>
+              <strong>학교 A</strong>
+            </Caption1>
+            <SchoolSearch selectedSchool={schoolA} onSelect={handleSelectSchoolA} />
           </div>
-        )}
+          <div className={styles.schoolSearchColumn}>
+            <Caption1 className={styles.schoolSearchLabel}>
+              <strong>학교 B</strong>
+            </Caption1>
+            <SchoolSearch selectedSchool={schoolB} onSelect={handleSelectSchoolB} />
+          </div>
+        </div>
 
-        {sampleError && (
+        {schoolValidationError && (
           <MessageBar intent="error">
-            <MessageBarBody>{sampleError}</MessageBarBody>
+            <MessageBarBody>{schoolValidationError}</MessageBarBody>
           </MessageBar>
-        )}
-
-        {!sampleLoading && !sampleError && (
-          <>
-            <div className={styles.selectedSummary}>
-              <Caption1>
-                선택된 학교: {selectedSchools.length} / 2
-              </Caption1>
-              {selectedSchools.map((school, index) => (
-                <span
-                  className={styles.selectedChip}
-                  key={`${school.eduOfficeCode}-${school.schoolCode}`}
-                >
-                  {index === 0 ? "A" : "B"} · {school.schoolName}
-                </span>
-              ))}
-            </div>
-
-            <div className={styles.cardGrid} aria-label="분석용 학교 샘플">
-              {schools.map((school) => {
-                const selected = isSelectedSchool(selectedSchools, school);
-                const disabled = !selected && selectedSchools.length >= 2;
-
-                return (
-                  <Card
-                    key={`${school.eduOfficeCode}-${school.schoolCode}`}
-                    className={mergeClasses(
-                      styles.schoolCard,
-                      selected && styles.schoolCardSelected,
-                      disabled && styles.schoolCardDisabled,
-                    )}
-                    aria-disabled={disabled}
-                    aria-pressed={selected}
-                    onClick={() => {
-                      if (!disabled) {
-                        handleToggleSchool(school);
-                      }
-                    }}
-                    onKeyDown={(event) => {
-                      if ((event.key === "Enter" || event.key === " ") && !disabled) {
-                        event.preventDefault();
-                        handleToggleSchool(school);
-                      }
-                    }}
-                    role="button"
-                    tabIndex={disabled ? -1 : 0}
-                  >
-                    <Body1>
-                      <strong>{school.schoolName}</strong>
-                    </Body1>
-                    <Caption1 className={styles.schoolMeta}>
-                      {[school.region, school.schoolKind, school.address]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </Caption1>
-                  </Card>
-                );
-              })}
-            </div>
-
-            {schoolValidationError && (
-              <MessageBar intent="error">
-                <MessageBarBody>{schoolValidationError}</MessageBarBody>
-              </MessageBar>
-            )}
-          </>
         )}
       </Card>
 
@@ -530,7 +423,7 @@ export function LunchAnalysisPage() {
 
           <Button
             appearance="primary"
-            disabled={analysisLoading || sampleLoading || schools.length === 0}
+            disabled={analysisLoading}
             icon={analysisLoading ? <Spinner size="tiny" /> : <PlayRegular />}
             onClick={() => void handleStartAnalysis()}
           >

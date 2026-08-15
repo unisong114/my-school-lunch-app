@@ -32,7 +32,19 @@ function formatDateInput(date: Date): string {
 async function openAnalysisTab(user: ReturnType<typeof userEvent.setup>) {
   renderApp();
   await user.click(screen.getByRole("tab", { name: "급식 분석" }));
-  expect(await screen.findByText("한강중학교")).toBeInTheDocument();
+  expect(await screen.findByText("학교 A")).toBeInTheDocument();
+}
+
+async function selectAnalysisSchool(
+  user: ReturnType<typeof userEvent.setup>,
+  slotIndex: 0 | 1,
+  query: string,
+  resultName: string,
+) {
+  const searchInputs = screen.getAllByLabelText("학교 이름 검색");
+  await user.type(searchInputs[slotIndex], query);
+  const result = await screen.findByText(resultName);
+  await user.click(result);
 }
 
 describe("급식 조회 통합 흐름", () => {
@@ -139,26 +151,16 @@ describe("급식 조회 통합 흐름", () => {
   });
 });
 
-it("급식 분석 페이지에서 샘플 학교를 보여주고 2곳까지만 선택할 수 있다", async () => {
+it("급식 분석 페이지에서 학교를 검색해서 2곳까지 선택할 수 있다", async () => {
   const user = userEvent.setup();
 
   await openAnalysisTab(user);
 
-  expect(screen.getByText("선택된 학교: 0 / 2")).toBeInTheDocument();
-  expect(screen.getByText("서울고등학교")).toBeInTheDocument();
-  expect(screen.getByText("한밭초등학교")).toBeInTheDocument();
+  await selectAnalysisSchool(user, 0, "서울", "서울고등학교");
+  await selectAnalysisSchool(user, 1, "한강", "한강중학교");
 
-  await user.click(screen.getByText("서울고등학교"));
-  await user.click(screen.getByText("한강중학교"));
-
-  expect(screen.getByText("선택된 학교: 2 / 2")).toBeInTheDocument();
   expect(screen.getByText("A · 서울고등학교")).toBeInTheDocument();
   expect(screen.getByText("B · 한강중학교")).toBeInTheDocument();
-
-  const thirdSchoolCard = screen
-    .getByText("한밭초등학교")
-    .closest('[role="button"]');
-  expect(thirdSchoolCard).toHaveAttribute("aria-disabled", "true");
 
   await user.click(screen.getByRole("button", { name: "분석 시작" }));
   expect(
@@ -198,8 +200,8 @@ it("학교 2곳과 날짜를 선택하면 기본 분석 프롬프트가 생성�
 
   await openAnalysisTab(user);
 
-  await user.click(screen.getByText("서울고등학교"));
-  await user.click(screen.getByText("한강중학교"));
+  await selectAnalysisSchool(user, 0, "서울", "서울고등학교");
+  await selectAnalysisSchool(user, 1, "한강", "한강중학교");
   await user.type(screen.getByLabelText("분석 날짜"), "2026-08-12");
 
   const promptField = screen.getByLabelText("분석 요청문");

@@ -5,9 +5,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from agent_framework import MCPStreamableHTTPTool
 from agent_framework.github import GitHubCopilotAgent
-from copilot import CopilotClient, RuntimeConnection
+from copilot import CopilotClient, PermissionHandler, RuntimeConnection
 
 from .config import Settings
 from .rubric import RubricSections
@@ -49,15 +48,21 @@ def build_copilot_client(settings: Settings) -> CopilotClient:
     )
 
 
-def build_mcp_tool(settings: Settings) -> MCPStreamableHTTPTool:
-    """NEIS MCP 서버 도구를 구성합니다."""
+def build_mcp_tool(settings: Settings) -> dict[str, Any]:
+    """NEIS MCP 서버 설정을 구성합니다.
 
-    return MCPStreamableHTTPTool(
-        name="neis_mcp",
-        url=settings.mcp_server_url,
-        allowed_tools=["search_schools", "get_meals"],
-        request_timeout=30,
-    )
+    ``GitHubCopilotAgent``는 Agent Framework의 ``MCPStreamableHTTPTool``을 인식하지
+    못하고 무시하므로(등록되지 않은 도구로 취급), Copilot SDK의
+    ``create_session(mcp_servers=...)`` 파라미터가 기대하는 ``MCPHTTPServerConfig``
+    형태의 딕셔너리로 직접 구성한다.
+    """
+
+    return {
+        "type": "http",
+        "url": settings.mcp_server_url,
+        "tools": ["search_schools", "get_meals"],
+        "timeout": 30_000,
+    }
 
 
 def _base_constraints(rubric: RubricSections) -> str:
@@ -115,6 +120,12 @@ def build_evaluator_agents(
     default_options: dict[str, Any] = {}
     if settings.github_copilot_model:
         default_options["model"] = settings.github_copilot_model
+    # MCP 도구(search_schools/get_meals) 호출은 Copilot SDK가 기본적으로 승인 없이
+    # 거부한다. 이 백엔드는 신뢰된 MCP 도구 호출만 수행하므로 자동 승인한다.
+    default_options["on_permission_request"] = PermissionHandler.approve_all
+    # GitHubCopilotAgent는 Agent Framework MCP 도구 객체를 인식하지 못하므로
+    # Copilot SDK 네이티브 mcp_servers 설정으로 전달해야 실제로 등록된다.
+    default_options["mcp_servers"] = {"neis_mcp": mcp_tool}
 
     return {
         area_key: GitHubCopilotAgent(
@@ -122,7 +133,6 @@ def build_evaluator_agents(
             name=area_key,
             instructions=build_evaluator_instructions(area_key, rubric),
             client=client,
-            tools=[mcp_tool],
             default_options=default_options or None,
         )
         for area_key in AREA_LABELS
