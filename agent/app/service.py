@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import contextlib
 import json
+import logging
 import re
 from collections.abc import AsyncIterator
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from agent_framework import AgentResponse
 from agent_framework.orchestrations import ConcurrentBuilder
@@ -160,7 +163,7 @@ class LunchBattleService:
             area_key = result.executor_id
             if area_key not in AREA_LABELS:
                 continue
-            parsed = self._parse_agent_json(result.agent_response.text, AreaEvaluationResponse)
+            parsed = self._parse_area_response(result.agent_response.text, area_key)
             if parsed.status == "no_data":
                 raise LunchBattleError(parsed.stop_reason or "선택한 날짜에 급식 데이터가 없어 비교를 중단했습니다.")
             if parsed.school_a is None or parsed.school_b is None:
@@ -265,23 +268,108 @@ class LunchBattleService:
         response = await self._quality_gate_agent.run(prompt)
         return self._parse_agent_json(response.text, QualityGateResponse)
 
-    def _parse_agent_json(self, text: str, model_type: type[Any]) -> Any:
-        candidates: list[str] = [text.strip()]
+    def _extract_json_candidates(self, text: str) -> list[dict[str, Any]]:
+        """모델 응답 텍스트에서 파싱 가능한 JSON 객체 후보를 모두 추출합니다."""
+
+        raw_candidates: list[str] = [text.strip()]
         fenced = re.findall(r"```(?:json)?\s*(\{.*?\})\s*```", text, flags=re.DOTALL)
-        candidates.extend(block.strip() for block in fenced)
+        raw_candidates.extend(block.strip() for block in fenced)
 
         if "{" in text and "}" in text:
             start = text.find("{")
             end = text.rfind("}") + 1
-            candidates.append(text[start:end].strip())
+            raw_candidates.append(text[start:end].strip())
 
-        for candidate in candidates:
+        parsed_candidates: list[dict[str, Any]] = []
+        for candidate in raw_candidates:
             if not candidate:
                 continue
             try:
                 parsed = json.loads(candidate)
-                return model_type.model_validate(parsed)
+            except Exception:
+                continue
+            if isinstance(parsed, dict):
+                parsed_candidates.append(parsed)
+        return parsed_candidates
+
+    def _parse_agent_json(self, text: str, model_type: type[Any]) -> Any:
+        for candidate in self._extract_json_candidates(text):
+            try:
+                return model_type.model_validate(candidate)
             except Exception:
                 continue
 
+        logger.warning("Failed to parse agent JSON response for %s: %r", model_type.__name__, text)
+        raise LunchBattleError("에이전트 응답을 구조화된 JSON으로 해석하지 못했습니다.")
+
+    _AREA_KEY_ALIASES: dict[str, tuple[str, ...]] = {
+        "nutritionBalance": ("nutritionBalance", "nutrition_balance"),
+        "healthiness": ("healthiness",),
+        "menuQuality": ("menuQuality", "menu_quality"),
+        "mealParticipation": ("mealParticipation", "meal_participation", "participation"),
+    }
+
+    def _normalize_area_school_evaluation(
+        self, school_value: Any, area_key: str
+    ) -> dict[str, Any] | None:
+        """평가자가 스키마를 벗어나 응답한 경우에도 해당 영역 점수만 복구를 시도합니다."""
+
+        if not isinstance(school_value, dict):
+            return None
+
+        # 이미 올바른 {score, rationale} 형태인 경우
+        if "score" in school_value and "rationale" in school_value:
+            return {"score": school_value.get("score"), "rationale": school_value.get("rationale")}
+
+        # `{"evaluation": {"<area>": {"score":.., "rationale":..}}}` 형태로 4개 영역을
+        # 한 번에 응답한 경우, 해당 영역 항목만 추출한다.
+        evaluation = school_value.get("evaluation")
+        if isinstance(evaluation, dict):
+            for alias in self._AREA_KEY_ALIASES.get(area_key, (area_key,)):
+                area_value = evaluation.get(alias)
+                if isinstance(area_value, dict) and "score" in area_value:
+                    return {
+                        "score": area_value.get("score"),
+                        "rationale": area_value.get("rationale") or "",
+                    }
+        return None
+
+    def _parse_area_response(self, text: str, area_key: str) -> AreaEvaluationResponse:
+        """영역별 평가자 응답을 파싱합니다.
+
+        LLM이 스키마를 그대로 따르지 않고 4개 영역/종합 비교를 한 번에 담아
+        응답하는 경우가 관측되어(예: `schoolA.evaluation.<area>` 중첩 구조),
+        엄격한 스키마 파싱에 실패하면 해당 영역 점수만 복구하는 완화된 경로를 시도한다.
+        """
+
+        candidates = self._extract_json_candidates(text)
+        for candidate in candidates:
+            try:
+                return AreaEvaluationResponse.model_validate(candidate)
+            except Exception:
+                continue
+
+        for candidate in candidates:
+            status = candidate.get("status", "ok") if isinstance(candidate, dict) else "ok"
+            school_a = self._normalize_area_school_evaluation(candidate.get("schoolA"), area_key)
+            school_b = self._normalize_area_school_evaluation(candidate.get("schoolB"), area_key)
+            if school_a is None or school_b is None:
+                continue
+            try:
+                return AreaEvaluationResponse.model_validate(
+                    {
+                        "status": status,
+                        "schoolA": school_a,
+                        "schoolB": school_b,
+                    }
+                )
+            except Exception:
+                continue
+
+        logger.warning(
+            "Failed to parse agent JSON response for %s (%s): %r",
+            AreaEvaluationResponse.__name__,
+            area_key,
+            text,
+        )
         raise LunchBattleError("에이전트 응답을 구조화된 JSON으로 해석하지 못했습니다.")

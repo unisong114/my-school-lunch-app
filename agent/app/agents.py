@@ -78,6 +78,15 @@ def build_evaluator_instructions(area_key: str, rubric: RubricSections) -> str:
 
     label = AREA_LABELS[area_key]
     schema_text = json.dumps(AREA_OUTPUT_SCHEMA, ensure_ascii=False, indent=2)
+    example_text = json.dumps(
+        {
+            "status": "ok",
+            "schoolA": {"score": 3, "rationale": "한국어 근거 설명 (예시)"},
+            "schoolB": {"score": 4, "rationale": "한국어 근거 설명 (예시)"},
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
     return (
         f"당신은 '{label}' 전문 평가자다.\n"
         f"{_base_constraints(rubric)}\n"
@@ -86,9 +95,15 @@ def build_evaluator_instructions(area_key: str, rubric: RubricSections) -> str:
         "학교 A와 학교 B의 선택 날짜 중식 데이터를 각각 확인한 뒤 평가한다.\n"
         "학교 한 곳이라도 해당 날짜 중식 데이터가 없으면 비교를 중단하고 status를 no_data로 반환한다.\n"
         "메뉴명만으로 확인할 수 없는 사실을 추정하지 않는다.\n"
-        "최종 답변은 설명문 없이 JSON 객체만 반환한다.\n"
+        f"당신의 임무는 오직 '{label}' 한 영역만 평가하는 것이다. 다른 3개 평가 영역이나 "
+        "종합 비교(총점, 승자, summary 등)는 절대 다루지 않는다.\n"
+        "최종 답변은 설명문 없이 아래 JSON 스키마와 정확히 같은 키 구조를 가진 JSON 객체 하나만 반환한다.\n"
+        "schoolA/schoolB 값에는 반드시 score와 rationale 두 필드만 포함하고, "
+        "name/menu/calorie/mealCount/evaluation/totalScore 등 스키마에 없는 필드는 절대 추가하지 않는다.\n"
         "JSON 스키마:\n"
-        f"{schema_text}"
+        f"{schema_text}\n\n"
+        "올바른 응답 예시:\n"
+        f"{example_text}"
     )
 
 
