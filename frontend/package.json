@@ -11,7 +11,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@fluentui/react-components": "^9.54.0",
+    "@fluentui/react-components": "^9.74.7",
     "@fluentui/react-icons": "^2.0.245",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
